@@ -20,6 +20,7 @@ import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -167,15 +168,30 @@ public class PersonasBatchConfiguration {
 				.build();
 	}
 
+	// Tareas
+	@Bean
+	public FTPLoadTasklet ftpLoadTasklet(@Value("${input.dir.name:./ftp}") String dir) {
+		FTPLoadTasklet tasklet = new FTPLoadTasklet();
+		tasklet.setDirectoryResource(new FileSystemResource(dir));
+		return tasklet;
+	}
+	@Bean
+	public Step copyFilesInDir(FTPLoadTasklet ftpLoadTasklet) {
+	        return this.stepBuilderFactory.get("copyFilesInDir")
+	                                .tasklet(ftpLoadTasklet)
+	                                .build();
+	}
+
 	// Trabajo
 	@Bean
 	public Job personasJob(PersonasJobListener listener, Step importCSV2DBStep1, Step importCSV2DBStep2, 
-			Step importCSV2DBStep3, Step exportDB2CSVStep, Step exportDB2CSVStep2) {
+			Step importCSV2DBStep3, Step exportDB2CSVStep, Step exportDB2CSVStep2, Step copyFilesInDir) {
 		return jobBuilderFactory
 				.get("personasJob")
 				.incrementer(new RunIdIncrementer())
 				.listener(listener)
-				.start(importCSV2DBStep1)
+				.start(copyFilesInDir)
+				.next(importCSV2DBStep1)
 				.next(importCSV2DBStep2)
 				.next(importCSV2DBStep3)
 				.next(exportDB2CSVStep)
