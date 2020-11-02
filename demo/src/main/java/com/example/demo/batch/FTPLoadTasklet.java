@@ -22,7 +22,7 @@ public class FTPLoadTasklet  implements Tasklet, InitializingBean {
     private Resource source;
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
         File dir = source.getFile();
-        Assert.state(dir.isDirectory(), "isDirectory");
+        Assert.state(dir.isDirectory(), "No es un Directory");
         File[] files = dir.listFiles(new FilenameFilter() {
             public boolean accept(File file, String name) {
             	return name.toLowerCase().endsWith(".csv");
