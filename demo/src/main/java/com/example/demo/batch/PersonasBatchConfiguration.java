@@ -2,6 +2,8 @@ package com.example.demo.batch;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.sql.DataSource;
 import org.springframework.batch.core.Job;
@@ -23,6 +25,10 @@ import org.springframework.batch.item.file.builder.FlatFileItemWriterBuilder;
 import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
+import org.springframework.batch.item.xml.StaxEventItemReader;
+import org.springframework.batch.item.xml.StaxEventItemWriter;
+import org.springframework.batch.item.xml.builder.StaxEventItemReaderBuilder;
+import org.springframework.batch.item.xml.builder.StaxEventItemWriterBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.openfeign.EnableFeignClients;
@@ -31,6 +37,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.oxm.xstream.XStreamMarshaller;
 
 import com.example.demo.model.Persona;
 import com.example.demo.model.PersonaCortoDTO;
@@ -188,48 +195,101 @@ public class PersonasBatchConfiguration {
 	                                .build();
 	}
 
-	// Trabajo
-//	@Bean
-//	public Job personasJob(PersonasJobListener listener, Step importCSV2DBStep1, Step importCSV2DBStep2, 
-//			Step importCSV2DBStep3, Step exportDB2CSVStep, Step exportDB2CSVStep2, Step copyFilesInDir) {
-//		return jobBuilderFactory
-//				.get("personasJob")
-//				.incrementer(new RunIdIncrementer())
-//				.listener(listener)
-//				.start(copyFilesInDir)
-//				.next(importCSV2DBStep1)
-//				.next(importCSV2DBStep2)
-//				.next(importCSV2DBStep3)
-//				.next(exportDB2CSVStep)
-//				.next(exportDB2CSVStep2)
-//				.build();
-//	}
-
-	@Autowired 
-	private PhotoRestItemReader photoRestItemReader;
+	// XML a BD
 	
+	public StaxEventItemReader<PersonaDTO> personaXMLItemReader() {
+		XStreamMarshaller marshaller = new XStreamMarshaller();
+		Map<String, Class> aliases = new HashMap<>();
+		aliases.put("Persona", PersonaDTO.class);
+		marshaller.setAliases(aliases);
+		return new StaxEventItemReaderBuilder<PersonaDTO>()
+				.name("personaXMLItemReader")
+				.resource(new ClassPathResource("Personas.xml"))
+				.addFragmentRootElements("Persona")
+				.unmarshaller(marshaller)
+				.build();
+	}	
 	@Bean
-	public Job photoJob() {
-		String[] headers = new String[] { "id", "author", "width", "height", "url", "download_url" };
-		return jobBuilderFactory.get("photoJob")
-			.incrementer(new RunIdIncrementer())
-			.start(
-					stepBuilderFactory.get("photoJobStep1").<PhotoDTO, PhotoDTO>chunk(100)
-					.reader(photoRestItemReader)
-					.writer(new FlatFileItemWriterBuilder<PhotoDTO>().name("photoCSVItemWriter")
-						.resource(new FileSystemResource("output/photoData.csv"))
-						.headerCallback(new FlatFileHeaderCallback() {
-							public void writeHeader(Writer writer) throws IOException {
-								writer.write(String.join(",", headers));
-							}})
-						.lineAggregator(new DelimitedLineAggregator<PhotoDTO>() { {
-							setDelimiter(",");
-							setFieldExtractor(new BeanWrapperFieldExtractor<PhotoDTO>() { {
-								setNames(headers);
-							}});
-						}}).build())
-					.build())
+	public Step importXML2DBStep1(JdbcBatchItemWriter<Persona> personaDBItemWriter) {
+		return stepBuilderFactory.get("importXML2DBStep1")
+				.<PersonaDTO, Persona>chunk(10)
+				.reader(personaXMLItemReader())
+				.processor(personaItemProcessor)
+				.writer(personaDBItemWriter)
 				.build();
 	}
+	
+	// DB a XML
+	
+	public StaxEventItemWriter<Persona> personaXMLItemWriter() {
+		XStreamMarshaller marshaller = new XStreamMarshaller();
+		Map<String, Class> aliases = new HashMap<>();
+		aliases.put("Persona", Persona.class);
+		marshaller.setAliases(aliases);
+		return new StaxEventItemWriterBuilder<Persona>()
+				.name("personaXMLItemWriter")
+				.resource(new FileSystemResource("output/outputData.xml"))
+				.marshaller(marshaller)
+				.rootTagName("Personas")
+				.overwriteOutput(true)
+				.build();
+	}
+	
+	@Bean
+	public Step exportDB2XMLStep(JdbcCursorItemReader<Persona> personaDBItemReader) {
+		return stepBuilderFactory.get("exportDB2XMLStep")
+				.<Persona, Persona>chunk(100)
+				.reader(personaDBItemReader)
+				.writer(personaXMLItemWriter())
+				.build();
+	}
+
+
+	// Trabajo
+	@Bean
+	public Job personasJob(PersonasJobListener listener, Step importCSV2DBStep1, Step importCSV2DBStep2, 
+			Step importCSV2DBStep3, Step exportDB2CSVStep, Step exportDB2CSVStep2, Step copyFilesInDir,
+			Step importXML2DBStep1, Step exportDB2XMLStep) {
+		return jobBuilderFactory
+				.get("personasJob")
+				.incrementer(new RunIdIncrementer())
+				.listener(listener)
+				.start(copyFilesInDir)
+				.next(importCSV2DBStep1)
+				.next(importCSV2DBStep2)
+				.next(importCSV2DBStep3)
+				.next(importXML2DBStep1)
+				.next(exportDB2CSVStep)
+				.next(exportDB2CSVStep2)
+				.next(exportDB2XMLStep)
+				.build();
+	}
+
+//	@Autowired 
+//	private PhotoRestItemReader photoRestItemReader;
+//	
+//	@Bean
+//	public Job photoJob() {
+//		String[] headers = new String[] { "id", "author", "width", "height", "url", "download_url" };
+//		return jobBuilderFactory.get("photoJob")
+//			.incrementer(new RunIdIncrementer())
+//			.start(
+//					stepBuilderFactory.get("photoJobStep1").<PhotoDTO, PhotoDTO>chunk(100)
+//						.reader(photoRestItemReader)
+//						.writer(new FlatFileItemWriterBuilder<PhotoDTO>().name("photoCSVItemWriter")
+//							.resource(new FileSystemResource("output/photoData.csv"))
+//							.headerCallback(new FlatFileHeaderCallback() {
+//								public void writeHeader(Writer writer) throws IOException {
+//									writer.write(String.join(",", headers));
+//								}})
+//							.lineAggregator(new DelimitedLineAggregator<PhotoDTO>() { {
+//								setDelimiter(",");
+//								setFieldExtractor(new BeanWrapperFieldExtractor<PhotoDTO>() { {
+//									setNames(headers);
+//								}});
+//							}}).build())
+//					.build())
+//			.build();
+//	}
 
 }
