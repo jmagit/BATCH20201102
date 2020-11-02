@@ -27,6 +27,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 
 import com.example.demo.model.Persona;
+import com.example.demo.model.PersonaCortoDTO;
 import com.example.demo.model.PersonaDTO;
 
 @Configuration
@@ -111,7 +112,6 @@ public class PersonasBatchConfiguration {
 				.build();
 	}
 
-	@Bean
 	public FlatFileItemWriter<Persona> personaCSVItemWriter() {
 		return new FlatFileItemWriterBuilder<Persona>().name("personaCSVItemWriter")
 				.resource(new FileSystemResource("output/outputData.csv"))
@@ -126,7 +126,6 @@ public class PersonasBatchConfiguration {
 					}
 				}).build();
 	}
-
 	@Bean
 	public Step exportDB2CSVStep(JdbcCursorItemReader<Persona> personaDBItemReader) {
 		return stepBuilderFactory.get("exportDB2CSVStep")
@@ -136,11 +135,42 @@ public class PersonasBatchConfiguration {
 				.build();
 	}
 
+	@Bean
+	JdbcCursorItemReader<PersonaCortoDTO> personaDBItemReader2(DataSource dataSource) {
+		return new JdbcCursorItemReaderBuilder<PersonaCortoDTO>().name("personaDBItemReader")
+				.sql("SELECT id, nombre FROM personas").dataSource(dataSource)
+				.rowMapper(new BeanPropertyRowMapper<>(PersonaCortoDTO.class))
+				.build();
+	}
+
+	public FlatFileItemWriter<PersonaCortoDTO> personaCSVItemWriter2() {
+		return new FlatFileItemWriterBuilder<PersonaCortoDTO>().name("personaCSVItemWriter")
+				.resource(new FileSystemResource("output/outputData2.csv"))
+				.lineAggregator(new DelimitedLineAggregator<PersonaCortoDTO>() {
+					{
+						setDelimiter(",");
+						setFieldExtractor(new BeanWrapperFieldExtractor<PersonaCortoDTO>() {
+							{
+								setNames(new String[] { "id", "nombre" });
+							}
+						});
+					}
+				}).build();
+	}
+
+	@Bean
+	public Step exportDB2CSVStep2(JdbcCursorItemReader<PersonaCortoDTO> personaDBItemReader2) {
+		return stepBuilderFactory.get("exportDB2CSVStep2")
+				.<PersonaCortoDTO, PersonaCortoDTO>chunk(100)
+				.reader(personaDBItemReader2)
+				.writer(personaCSVItemWriter2())
+				.build();
+	}
 
 	// Trabajo
 	@Bean
 	public Job personasJob(PersonasJobListener listener, Step importCSV2DBStep1, Step importCSV2DBStep2, 
-			Step importCSV2DBStep3, Step exportDB2CSVStep) {
+			Step importCSV2DBStep3, Step exportDB2CSVStep, Step exportDB2CSVStep2) {
 		return jobBuilderFactory
 				.get("personasJob")
 				.incrementer(new RunIdIncrementer())
@@ -149,6 +179,7 @@ public class PersonasBatchConfiguration {
 				.next(importCSV2DBStep2)
 				.next(importCSV2DBStep3)
 				.next(exportDB2CSVStep)
+				.next(exportDB2CSVStep2)
 				.build();
 	}
 
