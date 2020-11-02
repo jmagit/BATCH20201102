@@ -11,9 +11,13 @@ import com.example.demo.model.PersonaDTO;
 @Component
 public class PersonaItemProcessor implements ItemProcessor<PersonaDTO, Persona> {
 	private static final Logger log = LoggerFactory.getLogger(PersonaItemProcessor.class);
+	private int maxError = 5;
 	
 	@Override
-	public Persona process(PersonaDTO item) throws Exception {	 
+	public Persona process(PersonaDTO item) throws Exception {	
+		if(item.getId() % 10 == 0 && maxError-- > 0) {
+			throw new ItemProcessorException("Error forzado");
+		}
 		if(item.getId() % 2 == 0 || "Male".equals(item.getSexo())) 
 			return null;
 		Persona rslt = new Persona(item.getId(), item.getApellidos() + ", " + item.getNombre(), 

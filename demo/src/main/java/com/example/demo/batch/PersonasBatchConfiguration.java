@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import javax.sql.DataSource;
+
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
@@ -92,9 +94,15 @@ public class PersonasBatchConfiguration {
 	public Step importCSV2DBStep1(JdbcBatchItemWriter<Persona> personaDBItemWriter) {
 		return stepBuilderFactory.get("importCSV2DBStep1")
 				.<PersonaDTO, Persona>chunk(10)
+				.listener((ItemProcessListener<PersonaDTO, Persona>)new ItemFailureLoggerListener())
 				.reader(personaCSVItemReader("personas-1.csv"))
 				.processor(personaItemProcessor)
 				.writer(personaDBItemWriter)
+				.faultTolerant()
+				.retry(ItemProcessorException.class)
+				.retryLimit(6)
+//				.skip(ItemProcessorException.class)
+//				.skipLimit(7)
 				.build();
 	}
 
@@ -256,11 +264,11 @@ public class PersonasBatchConfiguration {
 				.listener(listener)
 				.start(copyFilesInDir)
 				.next(importCSV2DBStep1)
-				.next(importCSV2DBStep2)
-				.next(importCSV2DBStep3)
-				.next(importXML2DBStep1)
-				.next(exportDB2CSVStep)
-				.next(exportDB2CSVStep2)
+//				.next(importCSV2DBStep2)
+//				.next(importCSV2DBStep3)
+//				.next(importXML2DBStep1)
+//				.next(exportDB2CSVStep)
+//				.next(exportDB2CSVStep2)
 				.next(exportDB2XMLStep)
 				.build();
 	}
